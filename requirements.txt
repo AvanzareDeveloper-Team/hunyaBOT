@@ -1,0 +1,6 @@
+discord.py==2.6.0
+aiohttp
+requests
+python-dotenv
+pillow
+matplotlib

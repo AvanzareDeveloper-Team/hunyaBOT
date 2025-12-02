@@ -4,7 +4,8 @@
 要: python, discord.py v2.x, pillow
 Replit: pip install pillow
 """
-
+from flask import Flask
+import threading
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -503,7 +504,18 @@ async def stats_loop():
             await update_stats_for_guild(int(guild_id_str))
         except Exception:
             continue
+app = Flask("フニャBOT")
 
+@app.route("/")
+def home():
+    return "I'm alive!"
+
+port = int(os.environ.get("PORT", 10000))
+
+def run_flask():
+    app.run(host="0.0.0.0", port=port)
+
+threading.Thread(target=run_flask).start()
 # ----------------------------
 # 起動（TOKEN 必須）
 # ----------------------------

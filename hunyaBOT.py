@@ -268,7 +268,29 @@ async def verify(interaction: discord.Interaction, code: str):
         return await interaction.response.send_message("ロールを付与できません（権限不足）。", ephemeral=True)
     await interaction.response.send_message("✅ 認証完了しました！", ephemeral=True)
     print("認証しました")
+from discord import Embed
+from datetime import datetime
 
+@bot.tree.command(name="help", description="helpを表示します")
+async def help(interaction: discord.Interaction):
+    embed = Embed(
+        title="help",
+        description=(
+            "auth 認証を開始します\n"
+            "verify 認証コードで認証を完了します\n"
+            "set_auth_role 認証後に付与するロールを設定します\n"
+            "dm ユーザー ID で指定した相手に DM を送信します\n"
+            "balance メッセージ送信でたまるコインの残高を確認します\n"
+            "shop_add コインで買えるロールを設定します\n"
+            "shop_buy コインで買えるロールを買います\n"
+            "global_create サーバー間でチャットできるグローバルチャットを作成します\n"
+            "global_join 指定した名前のグローバルチャットに参加します\n"
+            "公式のグローバルチャットは `hunya` です"
+        ),
+        color=discord.Color.green(),
+        timestamp=datetime.utcnow()
+    )
+    await interaction.response.send_message(embed=embed)
 # =================== on_ready ===================
 @bot.event
 async def on_ready():

@@ -1,0 +1,20 @@
+name: Discord Notify
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Discord notifications
+        uses: cl8dep/action-discord@0.1
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          message: |
+            📦 **GitHub Push**
+            Repo: ${{ github.repository }}
+            Author: ${{ github.actor }}
+            Commit: ${{ github.event.head_commit.message }}

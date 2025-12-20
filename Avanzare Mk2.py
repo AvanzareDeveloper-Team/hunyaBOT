@@ -4,27 +4,29 @@ from discord.ext import commands
 from bot.web import app
 from bot.config import BOT_TOKEN
 
-intents = discord.Intents.default()
-intents.members = True
-intents.message_content = True
+class Main(commands.Bot):
+    def __init__(self):
+        Intents = discord.Intents.default()
+        Intents.members = True
+        Intents.message_content = True
+        super().__init__(command_prefix="!", intents=Intents)
 
-bot = commands.Bot(command_prefix="!", intents=intents)
+    async def setup_hook(self):
+        import os
+        for f in os.listdir("bot/cogs"):
+            if f.endswith(".py"):
+                await self.load_extension(f"bot.cogs.{f[:-3]}")
 
-@bot.event
-async def on_ready():
-    await bot.tree.sync()
-    print(f"Login: {bot.user}")
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.tree.sync()
+        print(f"Login: {self.user}")
 
-async def load_cogs():
-    import os
-    for f in os.listdir("cogs"):
-        if f.endswith(".py"):
-            await bot.load_extension(f"cogs.{f[:-3]}")
 
 def run_flask():
     app.run(host="0.0.0.0")
 
 if __name__ == "__main__":
     threading.Thread(target=run_flask, daemon=True).start()
-    bot.loop.create_task(load_cogs())
+    bot = Main()
     bot.run(BOT_TOKEN)

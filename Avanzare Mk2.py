@@ -351,6 +351,22 @@ async def help_command(interaction: discord.Interaction):
     )
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+@bot.event
+async def on_ready():
+    # スラッシュコマンド同期
+    try:
+        synced = await bot.tree.sync()
+        print(f"スラッシュコマンド同期完了: {len(synced)}個")
+    except Exception as e:
+        print("同期エラー:", e)
+
+    # Bot情報表示
+    print(f"ログイン完了: {bot.user} (ID: {bot.user.id})")
+
+    # ステータス設定
+    await bot.change_presence(
+        activity=discord.Game(name="/help でコマンド確認")
+    )
 # ===============================
 # 起動
 # ===============================

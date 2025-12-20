@@ -1,6 +1,12 @@
 import os
 
+# ===== Discord =====
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-CLIENT_ID = "1445209748176896091"
-CLIENT_SECRET = "AQpWZ6cofRJI3IeyCumaK-6UCDo68ciw"
-REDIRECT_URI = "http://127.0.0.1:5000/callback"
+
+# ===== OAuth =====
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SECRET = os.getenv("CLIENT_SECRET")
+REDIRECT_URI = os.getenv("REDIRECT_URI")
+
+# ===== Flask =====
+PORT = int(os.getenv("PORT", 5000))

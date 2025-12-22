@@ -65,7 +65,8 @@ pip3 install -r requirements.txt
 
 ### 5. Tokenなどを登録する
 
-Coming Soon...
+`.env.sample`を**コピー**して名前を`.env`に変更。
+.envにTokenなどを設定。
 
 ### 6. 実行
 

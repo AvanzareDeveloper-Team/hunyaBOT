@@ -7,7 +7,7 @@ class TicketCog(commands.Cog):
         self.bot = bot
 
     class TicketView(View):
-        @Button(label="🎫 チケット作成", style=discord.ButtonStyle.green)
+        @discord.ui.button(label="🎫 チケット作成", style=discord.ButtonStyle.green)
         async def open(self, i: discord.Interaction, _):
             cat = discord.utils.get(i.guild.categories, name="Tickets")
             if not cat:
@@ -23,7 +23,7 @@ class TicketCog(commands.Cog):
             )
 
             class CloseView(View):
-                @Button(label="❌ チケットを閉じる", style=discord.ButtonStyle.red)
+                @discord.ui.button(label="❌ チケットを閉じる", style=discord.ButtonStyle.red)
                 async def close(self, inter: discord.Interaction, _):
                     await inter.response.send_message("削除します", ephemeral=True)
                     await ch.delete()

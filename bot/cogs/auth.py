@@ -2,7 +2,7 @@ import aiohttp
 import discord
 from discord.ext import commands
 from discord import app_commands
-from discord.ui import View, Button
+from discord.ui import View
 from bot.config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 OAUTH_URL = (
@@ -21,7 +21,7 @@ class Auth(commands.Cog):
     @app_commands.command(name="auth")
     async def auth(self, interaction: discord.Interaction):
         class V(View):
-            @Button(label="認証する", style=discord.ButtonStyle.blurple)
+            @discord.ui.button(label="認証する", style=discord.ButtonStyle.blurple)
             async def b(self, i: discord.Interaction, _):
                 await i.response.send_message(OAUTH_URL, ephemeral=True)
         await interaction.response.send_message("認証を開始します", view=V(), ephemeral=True)

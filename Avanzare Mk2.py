@@ -2,8 +2,11 @@ import threading
 import discord
 from discord.ext import commands
 from flask import Flask, request
+from VersaLog import *
 
 from bot.config import BOT_TOKEN
+
+logger = VersaLog(enum="detailed")
 
 app = Flask(__name__)
 
@@ -36,7 +39,7 @@ class Main(commands.Bot):
     @commands.Cog.listener()
     async def on_ready(self):
         await self.tree.sync()
-        print(f"Login: {self.user}")
+        logger.info(f"Login: {self.user}")
 
 # # Cogs 読み込み
 # COGS = [

@@ -1,9 +1,9 @@
-import discord
-from discord.ext import commands
 import threading
 from flask import Flask, request
+from discord.ext import commands
 from bot.cogs.auth import AuthCog
 from bot.config import BOT_TOKEN
+import discord
 import os
 import json
 
@@ -47,10 +47,10 @@ def run_flask():
 # -----------------------------
 # Discord Bot
 # -----------------------------
-intents = discord.Intents.default()  # ← まず作る
-intents.members = True               # ← メンバー情報取得に必須
+intents = discord.Intents.default()
+intents.members = True
 
-bot = commands.Bot(command_prefix="!", intents=intents)  # ← ここで使用
+bot = commands.Bot(command_prefix="!", intents=intents)
 
 # Flask をスレッドで起動
 threading.Thread(target=run_flask, daemon=True).start()
@@ -58,7 +58,8 @@ threading.Thread(target=run_flask, daemon=True).start()
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
-    redirect_url = os.environ.get("REDIRECT_URI")  # Render で設定
+    redirect_url = os.environ.get("REDIRECT_URI")  # Render の公開URL
     await bot.add_cog(AuthCog(bot, redirect_url))
+    await bot.tree.sync()  # スラッシュコマンド同期
 
 bot.run(BOT_TOKEN)

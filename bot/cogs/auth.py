@@ -4,6 +4,7 @@ from discord.ext import commands, tasks
 from discord.ui import View
 import json
 import os
+from urllib.parse import quote
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -33,12 +34,15 @@ class AuthCog(commands.Cog):
     def __init__(self, bot, redirect_base_url):
         self.bot = bot
         self.redirect_base_url = redirect_base_url
-        self.bot.session = aiohttp.ClientSession()
+        self.session: aiohttp.ClientSession | None = None
         self.auth_loop.start()
 
-    def make_oauth_url(self, user_id):
+    # --------------------------
+    # OAuth URL生成
+    # --------------------------
+    def make_oauth_url(self, user_id: int):
         from bot.config import CLIENT_ID
-        redirect_uri = f"{self.redirect_base_url}/callback"
+        redirect_uri = quote(f"{self.redirect_base_url}/callback", safe="")
         return (
             "https://discord.com/api/oauth2/authorize"
             f"?client_id={CLIENT_ID}"
@@ -49,35 +53,64 @@ class AuthCog(commands.Cog):
         )
 
     # --------------------------
-    # 認証コマンド
+    # 認証開始
     # --------------------------
     @commands.hybrid_command(name="auth", description="認証を開始します")
-    async def auth(self, ctx):
+    async def auth(self, ctx: commands.Context):
         url = self.make_oauth_url(ctx.author.id)
         view = View(timeout=300)
-        view.add_item(discord.ui.Button(label="認証する", style=discord.ButtonStyle.url, url=url))
-        await ctx.send("下のボタンから認証してください。", view=view, ephemeral=True)
+        view.add_item(
+            discord.ui.Button(
+                label="認証する",
+                style=discord.ButtonStyle.url,
+                url=url
+            )
+        )
+
+        # ★ 修正ポイント：hybrid_command対応
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(
+                "下のボタンから認証してください。",
+                view=view,
+                ephemeral=True
+            )
+        else:
+            await ctx.send("下のボタンから認証してください。", view=view)
 
     # --------------------------
-    # 認証ロール設定コマンド（管理者用）
+    # 認証ロール設定
     # --------------------------
     @commands.hybrid_command(name="set_auth_role", description="認証ロールを設定します")
     @commands.has_permissions(administrator=True)
-    async def set_auth_role(self, ctx, role: discord.Role):
+    async def set_auth_role(self, ctx: commands.Context, role: discord.Role):
         auth_data[str(ctx.guild.id)] = role.id
         save("auth", auth_data)
-        await ctx.send(f"✅ 認証ロールを設定しました: {role.name}", ephemeral=True)
+
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(
+                f"✅ 認証ロールを設定しました: {role.name}",
+                ephemeral=True
+            )
+        else:
+            await ctx.send(f"✅ 認証ロールを設定しました: {role.name}")
 
     # --------------------------
-    # 禁止サーバー追加コマンド（管理者用）
+    # 禁止サーバー追加
     # --------------------------
     @commands.hybrid_command(name="ban_server_add", description="禁止サーバーを追加します")
     @commands.has_permissions(administrator=True)
-    async def ban_server_add(self, ctx, guild_id: str):
+    async def ban_server_add(self, ctx: commands.Context, guild_id: str):
         if guild_id not in banned_guilds:
             banned_guilds.append(guild_id)
             save("banned_guilds", banned_guilds)
-        await ctx.send(f"✅ 禁止サーバーを追加しました: {guild_id}", ephemeral=True)
+
+        if ctx.interaction:
+            await ctx.interaction.response.send_message(
+                f"✅ 禁止サーバーを追加しました: {guild_id}",
+                ephemeral=True
+            )
+        else:
+            await ctx.send(f"✅ 禁止サーバーを追加しました: {guild_id}")
 
     # --------------------------
     # 自動認証ループ
@@ -85,13 +118,14 @@ class AuthCog(commands.Cog):
     @tasks.loop(seconds=5)
     async def auth_loop(self):
         from bot.config import CLIENT_ID, CLIENT_SECRET
+
         for user_id, code in list(auth_codes.items()):
             user = self.bot.get_user(int(user_id))
             if not user:
                 continue
 
             # token取得
-            async with self.bot.session.post(
+            async with self.session.post(
                 "https://discord.com/api/oauth2/token",
                 data={
                     "client_id": CLIENT_ID,
@@ -110,8 +144,8 @@ class AuthCog(commands.Cog):
 
             access_token = token["access_token"]
 
-            # guilds取得
-            async with self.bot.session.get(
+            # guild取得
+            async with self.session.get(
                 "https://discord.com/api/users/@me/guilds",
                 headers={"Authorization": f"Bearer {access_token}"}
             ) as resp:
@@ -125,6 +159,7 @@ class AuthCog(commands.Cog):
                     await user.send("❌ 禁止サーバーに参加しているため認証できません")
                 except discord.Forbidden:
                     pass
+
                 del auth_codes[user_id]
                 save("auth_codes", auth_codes)
                 continue
@@ -145,9 +180,7 @@ class AuthCog(commands.Cog):
                     try:
                         await member.add_roles(role)
                     except discord.Forbidden:
-                        print(f"権限不足: {guild.name} の {role.name}")
-                    except discord.HTTPException as e:
-                        print(f"ロール付与失敗: {e}")
+                        pass
 
             try:
                 await user.send("✅ 認証が完了しました！")
@@ -160,6 +193,8 @@ class AuthCog(commands.Cog):
     @auth_loop.before_loop
     async def before_auth_loop(self):
         await self.bot.wait_until_ready()
+        self.session = aiohttp.ClientSession()
 
     def cog_unload(self):
-        self.bot.loop.create_task(self.bot.session.close())
+        if self.session:
+            self.bot.loop.create_task(self.session.close())

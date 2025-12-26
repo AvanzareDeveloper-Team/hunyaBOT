@@ -3,7 +3,6 @@ import os
 import discord
 from discord.ext import commands
 from flask import Flask, request
-import json
 
 from bot.config import BOT_TOKEN
 from bot.cogs.auth import AuthCog
@@ -13,21 +12,6 @@ from bot.cogs.auth import AuthCog
 # ===============================
 app = Flask(__name__)
 
-DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
-AUTH_CODES_PATH = os.path.join(DATA_DIR, "auth_codes.json")
-
-# 認証コード読み込み
-try:
-    with open(AUTH_CODES_PATH, "r", encoding="utf-8") as f:
-        auth_codes = json.load(f)
-except:
-    auth_codes = {}
-
-def save_auth_codes():
-    with open(AUTH_CODES_PATH, "w", encoding="utf-8") as f:
-        json.dump(auth_codes, f, indent=2, ensure_ascii=False)
-
 @app.route("/")
 def home():
     return "Bot is running"
@@ -35,13 +19,22 @@ def home():
 @app.route("/callback")
 def callback():
     code = request.args.get("code")
-    state = request.args.get("state")  # user_id
+    state = request.args.get("state")
 
     if not code or not state:
         return "❌ 認証に失敗しました"
 
-    auth_codes[state] = code
-    save_auth_codes()
+    try:
+        user_id, guild_id = map(int, state.split(":"))
+    except ValueError:
+        return "❌ state が不正です"
+
+    auth_cog = bot.get_cog("AuthCog")
+    if auth_cog:
+        # Flask → Discord（非同期）へ処理を渡す
+        bot.loop.create_task(
+            auth_cog.handle_oauth(code, user_id, guild_id)
+        )
 
     return "✅ 認証完了しました。Discordに戻ってください。"
 
@@ -72,17 +65,10 @@ threading.Thread(target=run_flask, daemon=True).start()
 async def on_ready():
     print(f"✅ Logged in as {bot.user}")
 
-    # Render / Replit の公開URL
-    redirect_base_url = os.environ.get("REDIRECT_URI")
-    if not redirect_base_url:
-        raise RuntimeError("REDIRECT_URI が設定されていません")
+    # Cog登録（引数は bot だけ）
+    await bot.add_cog(AuthCog(bot))
 
-    # Cog登録
-    await bot.add_cog(AuthCog(bot, redirect_base_url))
-
-    # スラッシュ / ハイブリッド同期
     await bot.tree.sync()
-
     print("✅ Commands synced")
 
 # ===============================

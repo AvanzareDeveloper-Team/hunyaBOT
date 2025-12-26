@@ -2,22 +2,25 @@ import os
 import json
 import asyncio
 import aiohttp
+from urllib.parse import quote
+
 import discord
 from discord.ext import commands
 from discord import app_commands
 from discord.ui import Button, View
-from urllib.parse import quote
+from flask import Flask, request
 
 from bot.config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
-OWNER_ID = 123456789012345678  # ← 自分のDiscord IDに変更
+OWNER_ID = 123456789012345678  # 自分の Discord ID に変更
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 AUTO_ROLES_PATH = os.path.join(DATA_DIR, "auto_roles.json")
+AUTH_CODES_PATH = os.path.join(DATA_DIR, "auth_codes.json")
 
 # --------------------------
-# JSONユーティリティ
+# JSON ユーティリティ
 # --------------------------
 def load_json(path, default):
     if os.path.exists(path):
@@ -35,13 +38,21 @@ def save_json(path, data):
 class AuthCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.auth_codes = self.load_auth_codes()
+        self.start_flask()
 
-    # ---------- 自動ロール管理 ----------
-    def load_auto_roles(self) -> dict[str, str]:
+    # ---------- データ管理 ----------
+    def load_auto_roles(self):
         return load_json(AUTO_ROLES_PATH, {})
 
-    def save_auto_roles(self, data: dict[str, str]):
+    def save_auto_roles(self, data):
         save_json(AUTO_ROLES_PATH, data)
+
+    def load_auth_codes(self):
+        return load_json(AUTH_CODES_PATH, {})
+
+    def save_auth_codes(self):
+        save_json(AUTH_CODES_PATH, self.auth_codes)
 
     # ---------- OAuth URL ----------
     def make_oauth_url(self, user_id: int, guild_id: int) -> str:
@@ -70,25 +81,22 @@ class AuthCog(commands.Cog):
             await interaction.followup.send("⚠️ ロールが見つかりません", ephemeral=True)
             return
 
-        # ボタン作成
         class AuthView(View):
             def __init__(self):
                 super().__init__(timeout=None)
 
             @discord.ui.button(label="認証", style=discord.ButtonStyle.primary)
-            async def auth_button(self, button: Button, btn_interaction: discord.Interaction):
+            async def auth_button_inner(self, button: Button, btn_interaction: discord.Interaction):
                 await btn_interaction.response.defer(ephemeral=True)
-
                 member = btn_interaction.user
-                # まずロール付与
                 await member.add_roles(role, reason="ボタン認証開始")
-                await btn_interaction.followup.send(f"✅ 認証用ロールを付与しました。60秒以内に認証されない場合は解除されます", ephemeral=True)
+                await btn_interaction.followup.send(
+                    f"✅ 認証用ロールを付与しました。60秒以内に認証されない場合は解除されます",
+                    ephemeral=True
+                )
                 print(f"[auth_button] {member} にロール {role.name} 付与")
 
-                # 60秒待って認証済みか確認
                 await asyncio.sleep(60)
-                # 認証確認（ここでは簡易的にロールが残っていればOKとする）
-                # 実際は OAuth 完了フラグを別途管理するのがベスト
                 if role in member.roles:
                     try:
                         await member.remove_roles(role, reason="認証未完了のため自動解除")
@@ -98,9 +106,8 @@ class AuthCog(commands.Cog):
 
         await interaction.followup.send("🔐 認証ボタンを押してください", view=AuthView(), ephemeral=True)
 
-    # ---------- OAuth認証完了処理（Flaskなどから呼ぶ） ----------
+    # ---------- OAuth 完了処理 ----------
     async def handle_oauth(self, code: str, user_id: int, guild_id: int):
-        # アクセストークン取得
         async with aiohttp.ClientSession() as session:
             token_resp = await session.post(
                 "https://discord.com/api/oauth2/token",
@@ -135,7 +142,6 @@ class AuthCog(commands.Cog):
         if not role:
             return
 
-        # 認証完了 → ロール付与を確定（ここでは既に付与されていればそのまま維持）
         if role not in member.roles:
             await member.add_roles(role, reason="OAuth認証完了")
         print(f"[handle_oauth] {member} の認証完了、ロール維持/付与完了")
@@ -149,6 +155,43 @@ class AuthCog(commands.Cog):
         self.save_auto_roles(data)
         await interaction.followup.send(f"✅ 認証後ロールを **{role.name}** に設定しました", ephemeral=True)
         print(f"[set_auth_role] ギルド {interaction.guild.id} にロール {role.id} 設定完了")
+
+    # ---------- Flask サーバー ----------
+    def start_flask(self):
+        app = Flask(__name__)
+
+        @app.route("/callback")
+        def callback():
+            code = request.args.get("code")
+            state = request.args.get("state")
+            if not code or not state:
+                return "❌ 認証に失敗しました"
+
+            try:
+                user_id_str, guild_id_str = state.split(":")
+                user_id = int(user_id_str)
+                guild_id = int(guild_id_str)
+            except:
+                return "❌ state 不正"
+
+            self.auth_codes[f"{user_id}:{guild_id}"] = code
+            self.save_auth_codes()
+
+            # 非同期タスクで Bot 側に通知
+            asyncio.run_coroutine_threadsafe(
+                self.handle_oauth(code, user_id, guild_id),
+                self.bot.loop
+            )
+
+            return "✅ 認証完了しました。Discordに戻ってください。"
+
+        def run_flask():
+            port = int(os.environ.get("PORT", 10000))
+            app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+        threading.Thread(target=run_flask, daemon=True).start()
+        print("[Flask] OAuth callback サーバー起動")
+
 
 # --------------------------
 # setup

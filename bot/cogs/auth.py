@@ -9,9 +9,9 @@ from urllib.parse import quote
 from bot.config import CLIENT_ID, CLIENT_SECRET, REDIRECT_URI
 
 # ===============================
-# 基本設定
+# 設定
 # ===============================
-OWNER_ID = 123456789012345678  # ←あなたのDiscordユーザーID
+OWNER_ID = 123456789012345678  # ← 必ず自分のDiscordユーザーIDに変更
 
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -20,7 +20,7 @@ BANNED_GUILDS_PATH = os.path.join(DATA_DIR, "banned_guilds.json")
 AUTO_ROLES_PATH = os.path.join(DATA_DIR, "auto_roles.json")
 
 # ===============================
-# JSONユーティリティ
+# JSON Utility
 # ===============================
 def load_json(path, default):
     if os.path.exists(path):
@@ -39,7 +39,7 @@ class AuthCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    # ---------- データ ----------
+    # ---------- data ----------
     def load_banned_guilds(self) -> set[str]:
         return set(load_json(BANNED_GUILDS_PATH, []))
 
@@ -52,7 +52,9 @@ class AuthCog(commands.Cog):
     def save_auto_roles(self, data: dict[str, str]):
         save_json(AUTO_ROLES_PATH, data)
 
-    # ---------- OAuth ----------
+    # ===============================
+    # OAuth
+    # ===============================
     def make_oauth_url(self, user_id: int, guild_id: int) -> str:
         redirect_uri = quote(f"{REDIRECT_URI}/callback", safe="")
         state = f"{user_id}:{guild_id}"
@@ -68,26 +70,32 @@ class AuthCog(commands.Cog):
 
     @app_commands.command(name="auth", description="OAuth認証を行います")
     async def auth(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
         if not interaction.guild:
-            return await interaction.response.send_message(
+            await interaction.followup.send(
                 "❌ サーバー内で実行してください",
                 ephemeral=True
             )
+            return
 
         url = self.make_oauth_url(
             interaction.user.id,
             interaction.guild.id
         )
 
-        await interaction.response.send_message(
-            f"🔐 認証はこちら\n{url}",
+        await interaction.followup.send(
+            f"🔐 **以下のURLから認証してください**\n{url}",
             ephemeral=True
         )
 
-    # ---------- OAuth完了後処理（Flaskから呼ばれる） ----------
+    # ===============================
+    # OAuth callback handler
+    # （Flask側から event loop 経由で呼ばれる）
+    # ===============================
     async def handle_oauth(self, code: str, user_id: int, guild_id: int):
         async with aiohttp.ClientSession() as session:
-            # トークン取得
+            # アクセストークン取得
             token_resp = await session.post(
                 "https://discord.com/api/oauth2/token",
                 data={
@@ -97,7 +105,9 @@ class AuthCog(commands.Cog):
                     "code": code,
                     "redirect_uri": f"{REDIRECT_URI}/callback",
                 },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                headers={
+                    "Content-Type": "application/x-www-form-urlencoded"
+                },
             )
 
             token_data = await token_resp.json()
@@ -105,10 +115,12 @@ class AuthCog(commands.Cog):
             if not access_token:
                 return
 
-            # 参加サーバー取得
+            # ユーザーが参加しているサーバー一覧取得
             guilds_resp = await session.get(
                 "https://discord.com/api/users/@me/guilds",
-                headers={"Authorization": f"Bearer {access_token}"}
+                headers={
+                    "Authorization": f"Bearer {access_token}"
+                },
             )
             user_guilds = await guilds_resp.json()
 
@@ -121,7 +133,9 @@ class AuthCog(commands.Cog):
         # ---------- 自動ロール付与 ----------
         await self.give_auto_role(user_id, guild_id)
 
-    # ---------- BAN ----------
+    # ===============================
+    # Actions
+    # ===============================
     async def ban_user(self, user_id: int, guild_id: int):
         guild = self.bot.get_guild(guild_id)
         if not guild:
@@ -129,9 +143,8 @@ class AuthCog(commands.Cog):
 
         member = guild.get_member(user_id)
         if member:
-            await member.ban(reason="禁止サーバーに参加")
+            await member.ban(reason="禁止サーバーに参加しているため")
 
-    # ---------- 自動ロール ----------
     async def give_auto_role(self, user_id: int, guild_id: int):
         auto_roles = self.load_auto_roles()
         role_id = auto_roles.get(str(guild_id))
@@ -149,79 +162,92 @@ class AuthCog(commands.Cog):
             await member.add_roles(role, reason="OAuth認証完了")
 
     # ===============================
-    # 管理コマンド
+    # 管理コマンド（オーナー専用）
     # ===============================
-
     banned = app_commands.Group(
         name="banned",
-        description="禁止サーバー管理（オーナー専用）"
+        description="禁止サーバー管理（BOTオーナー専用）"
     )
 
     @banned.command(name="add")
     async def banned_add(self, interaction: discord.Interaction, guild_id: str):
+        await interaction.response.defer(ephemeral=True)
+
         if interaction.user.id != OWNER_ID:
-            return await interaction.response.send_message("❌ 権限なし", ephemeral=True)
+            await interaction.followup.send("❌ 権限なし", ephemeral=True)
+            return
 
         data = self.load_banned_guilds()
         data.add(guild_id)
         self.save_banned_guilds(data)
 
-        await interaction.response.send_message("✅ 追加しました", ephemeral=True)
+        await interaction.followup.send("✅ 追加しました", ephemeral=True)
 
     @banned.command(name="remove")
     async def banned_remove(self, interaction: discord.Interaction, guild_id: str):
+        await interaction.response.defer(ephemeral=True)
+
         if interaction.user.id != OWNER_ID:
-            return await interaction.response.send_message("❌ 権限なし", ephemeral=True)
+            await interaction.followup.send("❌ 権限なし", ephemeral=True)
+            return
 
         data = self.load_banned_guilds()
         data.discard(guild_id)
         self.save_banned_guilds(data)
 
-        await interaction.response.send_message("✅ 削除しました", ephemeral=True)
+        await interaction.followup.send("✅ 削除しました", ephemeral=True)
 
     @banned.command(name="list")
     async def banned_list(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+
         if interaction.user.id != OWNER_ID:
-            return await interaction.response.send_message("❌ 権限なし", ephemeral=True)
+            await interaction.followup.send("❌ 権限なし", ephemeral=True)
+            return
 
         data = self.load_banned_guilds()
         msg = "\n".join(data) if data else "なし"
-        await interaction.response.send_message(msg, ephemeral=True)
+        await interaction.followup.send(msg, ephemeral=True)
 
-    # ---------- 自動ロール設定 ----------
+    # ===============================
+    # 自動ロール設定（サーバー管理者）
+    # ===============================
     @app_commands.command(
-    name="set_auth_role",
-    description="認証後に付与するロールを設定（管理者専用）"
-)
-async def set_auth_role(
-    self,
-    interaction: discord.Interaction,
-    role: discord.Role
-):
-    # 即 defer（これが命）
-    await interaction.response.defer(ephemeral=True)
-
-    # サーバー内チェック
-    if not interaction.guild:
-        await interaction.followup.send(
-            "❌ サーバー内で実行してください",
-            ephemeral=True
-        )
-        return
-
-    # 管理者チェック（← これが正解）
-    if not interaction.user.guild_permissions.administrator:
-        await interaction.followup.send(
-            "❌ 管理者権限が必要です",
-            ephemeral=True
-        )
-        return
-
-    data = self.load_auto_roles()
-    data[str(interaction.guild.id)] = str(role.id)
-    self.save_auto_roles(data)
-
-    await interaction.followup.send(
-        f"✅ 認証後ロールを **{role.name}** に設定しました",
-        ephemeral=True
+        name="set_auth_role",
+        description="認証後に付与するロールを設定（管理者専用）"
     )
+    async def set_auth_role(
+        self,
+        interaction: discord.Interaction,
+        role: discord.Role
+    ):
+        await interaction.response.defer(ephemeral=True)
+
+        if not interaction.guild:
+            await interaction.followup.send(
+                "❌ サーバー内で実行してください",
+                ephemeral=True
+            )
+            return
+
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.followup.send(
+                "❌ 管理者権限が必要です",
+                ephemeral=True
+            )
+            return
+
+        data = self.load_auto_roles()
+        data[str(interaction.guild.id)] = str(role.id)
+        self.save_auto_roles(data)
+
+        await interaction.followup.send(
+            f"✅ 認証後ロールを **{role.name}** に設定しました",
+            ephemeral=True
+        )
+
+# ===============================
+# setup（必須）
+# ===============================
+async def setup(bot: commands.Bot):
+    await bot.add_cog(AuthCog(bot))

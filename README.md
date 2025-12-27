@@ -72,7 +72,7 @@ pip3 install -r requirements.txt
 ### 6. 実行
 
 ```sh
-python3 "./Avanzare Mk2.py"
+python3 ./AvanzareMk2.py
 ```
 
 ※ファイル名にスペースがあるので必ず `"` `"` でくくる
